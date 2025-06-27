@@ -19,6 +19,9 @@ app = Flask(__name__)
 CALIBRE_BASE_URL = "http://[::1]:8080"
 # Your library ID (usually "Calibre_Library")  
 LIBRARY_ID = "Calibre_Library"
+
+# TESTING MODE - Set to False when connecting to real Calibre server
+USE_MOCK_DATA = True
 # =======================================================
 
 # Cache to avoid hitting server too frequently
@@ -39,92 +42,197 @@ def is_cache_valid():
 def get_newest_books():
     """Get newest books from Calibre-web with caching"""
     
-    # TEMPORARY MOCK DATA FOR TESTING TRMNL PLUGIN
-    # TODO: Replace with real Calibre connection later
-    today = datetime.now()
-    this_week = today - timedelta(days=2)
-    last_week = today - timedelta(days=8)
+    # MOCK DATA FOR TESTING - Remove this when connecting to real Calibre server
+    if USE_MOCK_DATA:
+        today = datetime.now()
+        this_week = today - timedelta(days=2)
+        last_week = today - timedelta(days=8)
+        
+        mock_books = [
+            {
+                'title': 'Feel-Good Productivity: How to Do More of What Matters to You',
+                'author': 'Ali Abdaal',
+                'rating': '★★★★',
+                'tags': ['Business', 'Psychology', 'Self Help'],
+                'published': this_week.isoformat(),
+                'date_added': this_week
+            },
+            {
+                'title': 'Storytelling with Data',
+                'author': 'Cole Nussbaumer Knaflic',
+                'rating': '★★★★',
+                'tags': ['Business', 'Reference', 'Science'],
+                'published': this_week.isoformat(),
+                'date_added': this_week
+            },
+            {
+                'title': 'How to Take Smart Notes',
+                'author': 'Sönke Ahrens',
+                'rating': '★★★★',
+                'tags': ['Business', 'Non-Fiction', 'Psychology'],
+                'published': this_week.isoformat(),
+                'date_added': this_week
+            },
+            {
+                'title': 'The Attachment Theory Workbook',
+                'author': 'Annie Chen LMFT',
+                'rating': '★★★★★',
+                'tags': ['Psychology', 'Self Help', 'Relationships'],
+                'published': this_week.isoformat(),
+                'date_added': this_week
+            },
+            {
+                'title': 'The Water Dancer',
+                'author': 'Ta-Nehisi Coates',
+                'rating': 'Not rated',
+                'tags': ['Fiction', 'Historical', 'African American'],
+                'published': last_week.isoformat(),
+                'date_added': last_week
+            },
+            {
+                'title': 'The Shyness and Social Anxiety Workbook',
+                'author': 'Martin M. Antony PhD',
+                'rating': '★★★★',
+                'tags': ['Non-Fiction', 'Psychology', 'Self Help'],
+                'published': last_week.isoformat(),
+                'date_added': last_week
+            },
+            {
+                'title': 'The CBT Workbook for Perfectionism',
+                'author': 'Sharon Martin DSW',
+                'rating': '★★★★',
+                'tags': ['Psychology', 'Self Help'],
+                'published': last_week.isoformat(),
+                'date_added': last_week
+            },
+            {
+                'title': 'Man\'s Search for Meaning',
+                'author': 'Viktor E. Frankl',
+                'rating': '★★★★',
+                'tags': ['Biography', 'Philosophy', 'Psychology'],
+                'published': (today - timedelta(days=20)).isoformat(),
+                'date_added': today - timedelta(days=20)
+            },
+            {
+                'title': 'Atomic Habits',
+                'author': 'James Clear',
+                'rating': '★★★★★',
+                'tags': ['Self Help', 'Psychology', 'Business'],
+                'published': (today - timedelta(days=25)).isoformat(),
+                'date_added': today - timedelta(days=25)
+            },
+            {
+                'title': 'The 7 Habits of Highly Effective People',
+                'author': 'Stephen R. Covey',
+                'rating': '★★★★★',
+                'tags': ['Self Help', 'Business', 'Leadership'],
+                'published': (today - timedelta(days=30)).isoformat(),
+                'date_added': today - timedelta(days=30)
+            },
+            {
+                'title': 'Sapiens: A Brief History of Humankind',
+                'author': 'Yuval Noah Harari',
+                'rating': '★★★★',
+                'tags': ['History', 'Philosophy', 'Science'],
+                'published': (today - timedelta(days=35)).isoformat(),
+                'date_added': today - timedelta(days=35)
+            }
+        ]
+        
+        # Cache the mock results
+        CACHE['books'] = mock_books
+        CACHE['books_timestamp'] = datetime.now()
+        
+        return CACHE['books']
     
-    mock_books = [
-        {
-            'title': 'Feel-Good Productivity: How to Do More of What Matters to You',
-            'author': 'Ali Abdaal',
-            'rating': '★★★★',
-            'tags': ['Business', 'Psychology', 'Self Help'],
-            'published': this_week.isoformat(),
-            'date_added': this_week
-        },
-        {
-            'title': 'Storytelling with Data',
-            'author': 'Cole Nussbaumer Knaflic',
-            'rating': '★★★★',
-            'tags': ['Business', 'Reference', 'Science'],
-            'published': this_week.isoformat(),
-            'date_added': this_week
-        },
-        {
-            'title': 'How to Take Smart Notes',
-            'author': 'Sönke Ahrens',
-            'rating': '★★★★',
-            'tags': ['Business', 'Non-Fiction', 'Psychology'],
-            'published': this_week.isoformat(),
-            'date_added': this_week
-        },
-        {
-            'title': 'The Attachment Theory Workbook',
-            'author': 'Annie Chen LMFT',
-            'rating': '★★★★★',
-            'tags': ['Psychology', 'Self Help', 'Relationships'],
-            'published': this_week.isoformat(),
-            'date_added': this_week
-        },
-        {
-            'title': 'The Water Dancer',
-            'author': 'Ta-Nehisi Coates',
-            'rating': 'Not rated',
-            'tags': ['Fiction', 'Historical', 'African American'],
-            'published': last_week.isoformat(),
-            'date_added': last_week
-        },
-        {
-            'title': 'The Shyness and Social Anxiety Workbook',
-            'author': 'Martin M. Antony PhD',
-            'rating': '★★★★',
-            'tags': ['Non-Fiction', 'Psychology', 'Self Help'],
-            'published': last_week.isoformat(),
-            'date_added': last_week
-        },
-        {
-            'title': 'The CBT Workbook for Perfectionism',
-            'author': 'Sharon Martin DSW',
-            'rating': '★★★★',
-            'tags': ['Psychology', 'Self Help'],
-            'published': last_week.isoformat(),
-            'date_added': last_week
-        },
-        {
-            'title': 'Man\'s Search for Meaning',
-            'author': 'Viktor E. Frankl',
-            'rating': '★★★★',
-            'tags': ['Biography', 'Philosophy', 'Psychology'],
-            'published': (today - timedelta(days=20)).isoformat(),
-            'date_added': today - timedelta(days=20)
-        },
-        {
-            'title': 'Atomic Habits',
-            'author': 'James Clear',
-            'rating': '★★★★★',
-            'tags': ['Self Help', 'Psychology', 'Business'],
-            'published': (today - timedelta(days=25)).isoformat(),
-            'date_added': today - timedelta(days=25)
-        }
-    ]
+    # REAL CALIBRE-WEB CONNECTION - This will be used when USE_MOCK_DATA = False
+    # Return cached data if valid
+    if is_cache_valid() and CACHE['books']:
+        return CACHE['books']
     
-    # Cache the mock results
-    CACHE['books'] = mock_books
-    CACHE['books_timestamp'] = datetime.now()
+    try:
+        url = f"{CALIBRE_BASE_URL}/opds/navcatalog/4f6e6577657374?library_id={LIBRARY_ID}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        # Parse the XML feed
+        root = ET.fromstring(response.content)
+        books = []
+        
+        # Extract book information
+        for entry in root.findall('.//{http://www.w3.org/2005/Atom}entry'):
+            title_elem = entry.find('.//{http://www.w3.org/2005/Atom}title')
+            author_elem = entry.find('.//{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name')
+            content_elem = entry.find('.//{http://www.w3.org/2005/Atom}content')
+            published_elem = entry.find('.//{http://www.w3.org/2005/Atom}published')
+            
+            if title_elem is not None and title_elem.text:
+                book_info = {
+                    'title': title_elem.text,
+                    'author': author_elem.text if author_elem is not None else 'Unknown Author',
+                    'published': published_elem.text if published_elem is not None else '',
+                }
+                
+                # Parse published date for grouping
+                if published_elem is not None and published_elem.text:
+                    try:
+                        book_info['date_added'] = datetime.fromisoformat(published_elem.text.replace('Z', '+00:00'))
+                    except:
+                        book_info['date_added'] = datetime.now()
+                else:
+                    book_info['date_added'] = datetime.now()
+                
+                # Extract rating and tags from content if available
+                if content_elem is not None and content_elem.text:
+                    content = content_elem.text
+                    
+                    # Extract rating
+                    if 'RATING:' in content:
+                        rating_start = content.find('RATING:') + 8
+                        rating_end = content.find('<br/>', rating_start)
+                        if rating_end > rating_start:
+                            book_info['rating'] = content[rating_start:rating_end].strip()
+                    
+                    # Extract tags
+                    if 'TAGS:' in content:
+                        tags_start = content.find('TAGS:') + 6
+                        tags_end = content.find('<br/>', tags_start)
+                        if tags_end > tags_start:
+                            tags = content[tags_start:tags_end].strip()
+                            book_info['tags'] = tags.split(', ')[:3]  # First 3 tags
+                
+                books.append(book_info)
+                
+        # Cache the results
+        CACHE['books'] = books[:15]  # Keep top 15
+        CACHE['books_timestamp'] = datetime.now()
+        
+        return CACHE['books']
+        
+    except Exception as e:
+        print(f"Error getting books from Calibre-web: {e}")
+        # Return cached data if available, even if expired
+        return CACHE['books'] if CACHE['books'] else []
+
+def get_random_book_suggestion():
+    """Get a random book suggestion for 'Try This Next'"""
+    books = get_newest_books()
+    if not books:
+        return None
     
-    return CACHE['books']
+    # Filter for books that aren't marked as "currently reading" 
+    # For now, we'll just pick a random book from the collection
+    available_books = [book for book in books if book.get('rating') != 'Currently Reading']
+    
+    if not available_books:
+        available_books = books  # Fallback to all books
+    
+    suggestion = random.choice(available_books)
+    return {
+        'title': suggestion['title'][:35] + ('...' if len(suggestion['title']) > 35 else ''),
+        'author': suggestion['author'][:20] + ('...' if len(suggestion['author']) > 20 else ''),
+        'tags': ', '.join(suggestion.get('tags', [])[:2]) if suggestion.get('tags') else 'No tags'
+    }
 
 def group_books_by_week():
     """Group books by week for list display"""
@@ -174,7 +282,7 @@ def get_library_stats():
         'total_recent_books': total_books,
         'rated_books': rated_books,
         'latest_book': latest_book,
-        'server_status': 'Connected (Mock Data)',
+        'server_status': 'Connected (Mock Data)' if USE_MOCK_DATA else 'Connected',
         'last_update': datetime.now().strftime('%m/%d %H:%M')
     }
 
@@ -218,6 +326,9 @@ def trmnl_data():
         # Check if we have any books to show
         has_recent_books = len(book_groups['this_week']) > 0 or len(book_groups['last_week']) > 0
         
+        # Get book suggestion for Try This Next
+        book_suggestion = get_random_book_suggestion()
+        
         # Format the response for TRMNL templates
         response_data = {
             'empty_library': False,
@@ -232,7 +343,8 @@ def trmnl_data():
             'rated_books': stats['rated_books'],
             'rating_percentage': round((stats['rated_books'] / stats['total_recent_books']) * 100) if stats['total_recent_books'] > 0 else 0,
             'server_status': stats['server_status'],
-            'current_time': datetime.now().strftime('%m/%d %H:%M')
+            'current_time': datetime.now().strftime('%m/%d %H:%M'),
+            'book_suggestion': book_suggestion
         }
         
         return jsonify(response_data)
@@ -349,6 +461,7 @@ def debug():
         'books_count': len(books) if books else 0,
         'latest_books': books[:3] if books else [],
         'book_groups': book_groups,
+        'book_suggestion': get_random_book_suggestion(),
         'stats': stats,
         'cache_status': {
             'is_valid': is_cache_valid(),
@@ -356,9 +469,10 @@ def debug():
         },
         'config': {
             'calibre_url': CALIBRE_BASE_URL,
-            'library_id': LIBRARY_ID
+            'library_id': LIBRARY_ID,
+            'use_mock_data': USE_MOCK_DATA
         },
-        'mode': 'mock_data'
+        'mode': 'mock_data' if USE_MOCK_DATA else 'live_calibre'
     })
 
 @app.route('/clear-cache')
@@ -380,7 +494,7 @@ def health():
             'calibre_url': CALIBRE_BASE_URL,
             'library_id': LIBRARY_ID,
             'books_found': len(books) if books else 0,
-            'mode': 'mock_data',
+            'mode': 'mock_data' if USE_MOCK_DATA else 'live_calibre',
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
@@ -393,12 +507,27 @@ def health():
 @app.route('/')
 def index():
     """Index page with setup instructions"""
-    return """
+    mock_status = "Using Mock Data for Testing" if USE_MOCK_DATA else "Connected to Calibre-web"
+    mock_warning = """
+    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0;">
+        <strong>🧪 Testing Mode:</strong> Currently using mock data. 
+        To connect to your real Calibre server:
+        <ol>
+            <li>Set <code>USE_MOCK_DATA = False</code> in app.py</li>
+            <li>Update <code>CALIBRE_BASE_URL</code> to your server URL</li>
+            <li>Redeploy the app</li>
+        </ol>
+    </div>
+    """ if USE_MOCK_DATA else ""
+    
+    return f"""
     <h1>TRMNL Calibre Plugin</h1>
     <p>Your Calibre-web TRMNL plugin is running!</p>
     
-    <h2>Status: Using Mock Data for Testing</h2>
+    <h2>Status: {mock_status}</h2>
     <p style="color: green;"><strong>✅ Ready for TRMNL integration!</strong></p>
+    
+    {mock_warning}
     
     <h2>Endpoints:</h2>
     <ul>
@@ -412,9 +541,9 @@ def index():
     </ul>
     
     <h2>Configuration:</h2>
-    <p>Current Calibre URL: <code>{}</code></p>
-    <p>Current Library ID: <code>{}</code></p>
-    <p><strong>Mode: Mock Data (Replace with real Calibre server later)</strong></p>
+    <p>Current Calibre URL: <code>{CALIBRE_BASE_URL}</code></p>
+    <p>Current Library ID: <code>{LIBRARY_ID}</code></p>
+    <p><strong>Mode: {"Mock Data (Testing)" if USE_MOCK_DATA else "Live Calibre Connection"}</strong></p>
     
     <h2>Display Options:</h2>
     <ol>
@@ -422,7 +551,7 @@ def index():
         <li><strong>Single Book</strong>: Use <code>/trmnl-data-simple</code> with your current template</li>
         <li><strong>Empty State</strong>: Use <code>/trmnl-data-empty</code> to test welcome message</li>
     </ol>
-    """.format(CALIBRE_BASE_URL, LIBRARY_ID)
+    """
 
 if __name__ == '__main__':
     # Get port from environment variable for deployment compatibility
@@ -432,19 +561,27 @@ if __name__ == '__main__':
     print(f"📚 Calibre-web URL: {CALIBRE_BASE_URL}")
     print(f"📖 Library: {LIBRARY_ID}")
     print(f"🌐 Server starting on port {port}")
-    print("📝 Mode: Mock Data for Testing")
+    print(f"📝 Mode: {'Mock Data (Testing)' if USE_MOCK_DATA else 'Live Calibre Connection'}")
+    
+    if USE_MOCK_DATA:
+        print("🧪 TESTING MODE: Using mock data for demonstration")
+        print("   Set USE_MOCK_DATA = False to connect to real Calibre server")
     
     # Test connection on startup
-    print("🔍 Loading mock data...")
+    print("🔍 Loading data...")
     test_books = get_newest_books()
     if test_books:
-        print(f"✅ Success! Loaded {len(test_books)} mock books")
+        print(f"✅ Success! Loaded {len(test_books)} books")
         groups = group_books_by_week()
         print(f"📅 This week: {len(groups['this_week'])} books")
         print(f"📅 Last week: {len(groups['last_week'])} books")
         print(f"📅 Earlier: {len(groups['earlier'])} books")
+        
+        suggestion = get_random_book_suggestion()
+        if suggestion:
+            print(f"🎲 Try This Next: {suggestion['title']}")
     else:
-        print("❌ Could not load mock data")
+        print("❌ Could not load data")
     
     print("🎯 Ready for TRMNL integration!")
     app.run(host='0.0.0.0', port=port, debug=False)
