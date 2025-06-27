@@ -34,7 +34,7 @@ def get_books_from_calibre():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Query to get books with additional metadata
+        # Query to get books with page count from Count Pages plugin
         query = """
         SELECT 
             b.id,
@@ -43,14 +43,17 @@ def get_books_from_calibre():
             b.timestamp,
             r.rating,
             c.text as description,
-            (SELECT COUNT(*) FROM data WHERE book = b.id AND format = 'EPUB') as page_estimate
+            cp.value as page_count
         FROM books b
         LEFT JOIN books_authors_link bal ON b.id = bal.book
         LEFT JOIN authors a ON bal.author = a.id
         LEFT JOIN books_ratings_link brl ON b.id = brl.book
         LEFT JOIN ratings r ON brl.rating = r.id
         LEFT JOIN comments c ON b.id = c.book
-        GROUP BY b.id, b.title, b.timestamp, r.rating, c.text
+        LEFT JOIN books_custom_column_links ccl ON b.id = ccl.book
+        LEFT JOIN custom_columns cc ON ccl.column = cc.id AND cc.lookup_name = '#pages'
+        LEFT JOIN custom_column_text cp ON ccl.value = cp.id
+        GROUP BY b.id, b.title, b.timestamp, r.rating, c.text, cp.value
         ORDER BY b.timestamp DESC
         """
         
@@ -90,22 +93,6 @@ def get_book_tags(book_id):
         print(f"Error getting tags: {e}")
         return ""
 
-def estimate_page_count(description_length, has_epub=False):
-    """Estimate page count based on description length and other factors"""
-    # Base estimate
-    if description_length > 1000:
-        base_pages = random.randint(250, 400)
-    elif description_length > 500:
-        base_pages = random.randint(150, 300)
-    elif description_length > 200:
-        base_pages = random.randint(100, 250)
-    else:
-        base_pages = random.randint(50, 200)
-    
-    # Add some randomness
-    variation = random.randint(-30, 50)
-    return max(50, base_pages + variation)
-
 @app.route('/calibre-status')
 def calibre_status():
     try:
@@ -128,7 +115,7 @@ def calibre_status():
         earlier_books = []
         
         for i, book in enumerate(books, 1):
-            book_id, title, authors, timestamp_str, rating, description, page_estimate = book
+            book_id, title, authors, timestamp_str, rating, description, page_count_str = book
             
             # Parse timestamp
             try:
@@ -139,9 +126,13 @@ def calibre_status():
             # Get tags
             tags = get_book_tags(book_id)
             
-            # Estimate page count
-            desc_length = len(description) if description else 0
-            estimated_pages = estimate_page_count(desc_length, page_estimate > 0)
+            # Parse page count from Count Pages plugin
+            page_count = None
+            if page_count_str:
+                try:
+                    page_count = int(page_count_str)
+                except (ValueError, TypeError):
+                    page_count = None
             
             # Format rating
             stars = "★" * rating if rating else ""
@@ -164,7 +155,7 @@ def calibre_status():
                 "rating": stars,
                 "has_rating": bool(rating),
                 "description": clean_description,
-                "page_count": estimated_pages
+                "page_count": page_count
             }
             
             # Categorize by date
