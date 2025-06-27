@@ -16,7 +16,7 @@ app = Flask(__name__)
 # USER CONFIGURATION - UPDATE THESE VALUES WITH YOUR OWN
 # =======================================================
 # Your Calibre-web server URL (update with your actual server)
-CALIBRE_BASE_URL = "http://[::1]:8080"
+CALIBRE_BASE_URL = "http://your-calibre-server.com:8080"  # Update this
 # Your library ID (usually "Calibre_Library")  
 LIBRARY_ID = "Calibre_Library"
 # =======================================================
