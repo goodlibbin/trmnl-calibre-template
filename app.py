@@ -16,7 +16,7 @@ app = Flask(__name__)
 # USER CONFIGURATION - UPDATE THESE VALUES WITH YOUR OWN
 # =======================================================
 # Your Calibre-web server URL (update with your actual server)
-CALIBRE_BASE_URL = "http://your-calibre-server.com:8080"  # Update this
+CALIBRE_BASE_URL = "http://[::1]:8080"
 # Your library ID (usually "Calibre_Library")  
 LIBRARY_ID = "Calibre_Library"
 # =======================================================
@@ -39,64 +39,50 @@ def is_cache_valid():
 def get_newest_books():
     """Get newest books from Calibre-web with caching"""
     
-    # Return cached data if valid
-    if is_cache_valid() and CACHE['books']:
-        return CACHE['books']
+    # TEMPORARY MOCK DATA FOR TESTING TRMNL PLUGIN
+    mock_books = [
+        {
+            'title': 'Feel-Good Productivity: How to Do More of What Matters to You',
+            'author': 'Ali Abdaal',
+            'rating': '★★★★',
+            'tags': ['Business', 'Psychology', 'Self Help'],
+            'published': '2025-06-24T17:15:27+00:00'
+        },
+        {
+            'title': 'Storytelling with Data',
+            'author': 'Cole Nussbaumer Knaflic',
+            'rating': '★★★★',
+            'tags': ['Business', 'Reference', 'Science'],
+            'published': '2025-06-24T17:14:47+00:00'
+        },
+        {
+            'title': 'How to Take Smart Notes',
+            'author': 'Sönke Ahrens',
+            'rating': '★★★★',
+            'tags': ['Business', 'Non-Fiction', 'Psychology'],
+            'published': '2025-06-24T17:14:47+00:00'
+        },
+        {
+            'title': 'The Attachment Theory Workbook',
+            'author': 'Annie Chen LMFT',
+            'rating': '★★★★★',
+            'tags': ['Psychology', 'Self Help', 'Relationships'],
+            'published': '2025-06-24T03:36:03+00:00'
+        },
+        {
+            'title': 'The Water Dancer',
+            'author': 'Ta-Nehisi Coates',
+            'rating': 'Not rated',
+            'tags': ['Fiction', 'Historical', 'African American'],
+            'published': '2025-06-24T03:36:03+00:00'
+        }
+    ]
     
-    try:
-        url = f"{CALIBRE_BASE_URL}/opds/navcatalog/4f6e6577657374?library_id={LIBRARY_ID}"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        # Parse the XML feed
-        root = ET.fromstring(response.content)
-        books = []
-        
-        # Extract book information
-        for entry in root.findall('.//{http://www.w3.org/2005/Atom}entry'):
-            title_elem = entry.find('.//{http://www.w3.org/2005/Atom}title')
-            author_elem = entry.find('.//{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name')
-            content_elem = entry.find('.//{http://www.w3.org/2005/Atom}content')
-            published_elem = entry.find('.//{http://www.w3.org/2005/Atom}published')
-            
-            if title_elem is not None and title_elem.text:
-                book_info = {
-                    'title': title_elem.text,
-                    'author': author_elem.text if author_elem is not None else 'Unknown Author',
-                    'published': published_elem.text if published_elem is not None else '',
-                }
-                
-                # Extract rating and tags from content if available
-                if content_elem is not None and content_elem.text:
-                    content = content_elem.text
-                    
-                    # Extract rating
-                    if 'RATING:' in content:
-                        rating_start = content.find('RATING:') + 8
-                        rating_end = content.find('<br/>', rating_start)
-                        if rating_end > rating_start:
-                            book_info['rating'] = content[rating_start:rating_end].strip()
-                    
-                    # Extract tags
-                    if 'TAGS:' in content:
-                        tags_start = content.find('TAGS:') + 6
-                        tags_end = content.find('<br/>', tags_start)
-                        if tags_end > tags_start:
-                            tags = content[tags_start:tags_end].strip()
-                            book_info['tags'] = tags.split(', ')[:3]  # First 3 tags
-                
-                books.append(book_info)
-                
-        # Cache the results
-        CACHE['books'] = books[:10]  # Keep top 10
-        CACHE['books_timestamp'] = datetime.now()
-        
-        return CACHE['books']
-        
-    except Exception as e:
-        print(f"Error getting books: {e}")
-        # Return cached data if available, even if expired
-        return CACHE['books'] if CACHE['books'] else []
+    # Cache the mock results
+    CACHE['books'] = mock_books
+    CACHE['books_timestamp'] = datetime.now()
+    
+    return CACHE['books']
 
 def get_library_stats():
     """Get library statistics"""
@@ -105,7 +91,7 @@ def get_library_stats():
     if not books:
         return None
     
-    rated_books = len([book for book in books if book.get('rating')])
+    rated_books = len([book for book in books if book.get('rating') and book.get('rating') != 'Not rated'])
     total_books = len(books)
     
     # Get the most recent book
@@ -115,7 +101,7 @@ def get_library_stats():
         'total_recent_books': total_books,
         'rated_books': rated_books,
         'latest_book': latest_book,
-        'server_status': 'Connected',
+        'server_status': 'Connected (Mock Data)',
         'last_update': datetime.now().strftime('%m/%d %H:%M')
     }
 
@@ -269,24 +255,26 @@ def index():
     <p>Update the CALIBRE_BASE_URL and LIBRARY_ID in app.py</p>
     <p>Current Calibre URL: <code>{}</code></p>
     <p>Current Library ID: <code>{}</code></p>
+    <p><strong>Status: Using mock data for testing</strong></p>
     """.format(CALIBRE_BASE_URL, LIBRARY_ID)
 
 if __name__ == '__main__':
     # Get port from environment variable for deployment compatibility
-    port = int(os.environ.get('PORT', 5001))
+    port = int(os.environ.get('PORT', 5000))
     
     print("🚀 Starting TRMNL Calibre Plugin...")
     print(f"📚 Calibre-web URL: {CALIBRE_BASE_URL}")
     print(f"📖 Library: {LIBRARY_ID}")
     print(f"🌐 Server starting on port {port}")
+    print("📝 Using mock data for testing")
     
     # Test connection on startup
     print("🔍 Testing connection...")
     test_books = get_newest_books()
     if test_books:
-        print(f"✅ Success! Found {len(test_books)} recent books")
+        print(f"✅ Success! Found {len(test_books)} mock books")
         print(f"📖 Latest: {test_books[0]['title']}")
     else:
-        print("❌ Could not connect to Calibre-web")
+        print("❌ Could not load mock data")
     
     app.run(host='0.0.0.0', port=port, debug=False)
