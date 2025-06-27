@@ -2,16 +2,7 @@
 TRMNL Calibre Library Plugin Backend
 
 A Flask application that connects to your Calibre library database and provides
-book data in TRMNL-compatible JSON format. Designed for self-hosting by users
-who want to display their personal library on TRMNL e-ink devices.
-
-Features:
-- Direct Calibre database integration for accurate metadata
-- Support for ratings, tags, descriptions, and page counts
-- Time-based book categorization (This Week, Last Week, Earlier)
-- Book roulette feature for discovery
-- TRMNL form field integration
-- Smart caching to reduce database load
+book data in TRMNL-compatible JSON format.
 
 Repository: https://github.com/goodlibbin/trmnl-calibre-template
 License: MIT
@@ -32,25 +23,13 @@ CACHE_DURATION = 300  # 5 minutes
 
 
 def get_calibre_db_path():
-    """
-    Locate the Calibre library database file.
-    
-    Searches common Calibre installation locations and returns the path
-    to metadata.db. Users may need to customize this for non-standard
-    installations.
-    
-    Returns:
-        str: Path to the Calibre metadata.db file
-    """
+    """Find the Calibre library database file."""
     possible_paths = [
         os.path.expanduser("~/Calibre Library/metadata.db"),
         os.path.expanduser("~/Documents/Calibre Library/metadata.db"),
         os.path.expanduser("~/Library/Calibre Library/metadata.db"),  # macOS
         "/Users/Shared/Calibre Library/metadata.db",
         os.path.expanduser("~/calibre-library/metadata.db"),
-        # Add Windows common paths
-        os.path.expanduser("~/Documents/My Digital Editions/metadata.db"),
-        # Docker/server paths
         "/calibre/metadata.db",
         "/data/calibre/metadata.db"
     ]
@@ -59,27 +38,11 @@ def get_calibre_db_path():
         if os.path.exists(path):
             return path
     
-    # Default fallback
     return os.path.expanduser("~/Calibre Library/metadata.db")
 
 
-def get_books_from_calibre(book_limit=20):
-    """
-    Extract book data from the Calibre database.
-    
-    Queries the Calibre SQLite database for book metadata including:
-    - Basic info (title, authors, timestamp)
-    - Ratings (from built-in rating system)
-    - Descriptions (from comments)
-    - Page counts (from Count Pages plugin custom column)
-    - Tags (categories/genres)
-    
-    Args:
-        book_limit (int): Maximum number of books to return
-        
-    Returns:
-        list: List of book dictionaries with metadata
-    """
+def get_books_from_calibre(book_limit=50):
+    """Get books from Calibre database with simplified queries."""
     db_path = get_calibre_db_path()
     
     if not os.path.exists(db_path):
@@ -89,34 +52,85 @@ def get_books_from_calibre(book_limit=20):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Comprehensive query for book data with page count support
-        query = """
-        SELECT 
-            b.id,
-            b.title,
-            GROUP_CONCAT(a.name, ' & ') as authors,
-            b.timestamp,
-            r.rating,
-            c.text as description,
-            cp.value as page_count
-        FROM books b
-        LEFT JOIN books_authors_link bal ON b.id = bal.book
-        LEFT JOIN authors a ON bal.author = a.id
-        LEFT JOIN books_ratings_link brl ON b.id = brl.book
-        LEFT JOIN ratings r ON brl.rating = r.id
-        LEFT JOIN comments c ON b.id = c.book
-        LEFT JOIN books_custom_column_links ccl ON b.id = ccl.book
-        LEFT JOIN custom_columns cc ON ccl.column = cc.id AND cc.lookup_name = '#pages'
-        LEFT JOIN custom_column_text cp ON ccl.value = cp.id
-        GROUP BY b.id, b.title, b.timestamp, r.rating, c.text, cp.value
-        ORDER BY b.timestamp DESC
-        LIMIT ?
-        """
+        # First, get basic book info - simplified query
+        cursor.execute("""
+            SELECT b.id, b.title, b.timestamp, b.author_sort, b.path
+            FROM books b
+            ORDER BY b.timestamp DESC
+            LIMIT ?
+        """, (book_limit,))
         
-        cursor.execute(query, (book_limit * 2,))  # Get extra for filtering
-        books = cursor.fetchall()
+        basic_books = cursor.fetchall()
+        
+        if not basic_books:
+            conn.close()
+            return []
+        
+        books = []
+        
+        for book_id, title, timestamp, author_sort, path in basic_books:
+            book_data = {
+                'id': book_id,
+                'title': title or "Unknown Title",
+                'author': author_sort or "Unknown Author",
+                'timestamp': timestamp,
+                'rating': 0,
+                'description': "",
+                'page_count': None,
+                'tags': ""
+            }
+            
+            # Get rating
+            cursor.execute("""
+                SELECT r.rating 
+                FROM books_ratings_link brl 
+                JOIN ratings r ON brl.rating = r.id 
+                WHERE brl.book = ?
+            """, (book_id,))
+            rating_result = cursor.fetchone()
+            if rating_result:
+                book_data['rating'] = rating_result[0] or 0
+            
+            # Get description
+            cursor.execute("""
+                SELECT text FROM comments WHERE book = ?
+            """, (book_id,))
+            desc_result = cursor.fetchone()
+            if desc_result and desc_result[0]:
+                description = re.sub(r'<[^>]+>', '', desc_result[0]).strip()
+                if len(description) > 200:
+                    description = description[:197] + "..."
+                book_data['description'] = description
+            
+            # Get tags
+            cursor.execute("""
+                SELECT GROUP_CONCAT(t.name, ', ') as tags
+                FROM books_tags_link btl
+                JOIN tags t ON btl.tag = t.id
+                WHERE btl.book = ?
+            """, (book_id,))
+            tags_result = cursor.fetchone()
+            if tags_result and tags_result[0]:
+                book_data['tags'] = tags_result[0]
+            
+            # Get page count from custom column (if exists)
+            cursor.execute("""
+                SELECT cp.value as page_count
+                FROM books_custom_column_links ccl
+                JOIN custom_columns cc ON ccl.column = cc.id
+                JOIN custom_column_text cp ON ccl.value = cp.id
+                WHERE ccl.book = ? AND cc.lookup_name = '#pages'
+            """, (book_id,))
+            page_result = cursor.fetchone()
+            if page_result and page_result[0]:
+                try:
+                    book_data['page_count'] = int(page_result[0])
+                except (ValueError, TypeError):
+                    pass
+            
+            books.append(book_data)
+        
         conn.close()
-        
         return books
         
     except Exception as e:
@@ -124,53 +138,8 @@ def get_books_from_calibre(book_limit=20):
         return []
 
 
-def get_book_tags(book_id):
-    """
-    Get tags/categories for a specific book.
-    
-    Args:
-        book_id (int): Calibre book ID
-        
-    Returns:
-        str: Comma-separated list of tags
-    """
-    db_path = get_calibre_db_path()
-    
-    if not os.path.exists(db_path):
-        return ""
-    
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        query = """
-        SELECT GROUP_CONCAT(t.name, ', ') as tags
-        FROM books_tags_link btl
-        JOIN tags t ON btl.tag = t.id
-        WHERE btl.book = ?
-        """
-        
-        cursor.execute(query, (book_id,))
-        result = cursor.fetchone()
-        conn.close()
-        
-        return result[0] if result and result[0] else ""
-        
-    except Exception as e:
-        print(f"Tag query error: {e}")
-        return ""
-
-
 def create_sample_data():
-    """
-    Generate sample library data for testing and demonstration.
-    
-    This is displayed when no Calibre database is found or for users
-    testing the plugin before connecting their actual library.
-    
-    Returns:
-        dict: Sample book data in the expected format
-    """
+    """Generate sample library data for testing."""
     return {
         "empty_library": False,
         "server_connected": False,
@@ -183,47 +152,15 @@ def create_sample_data():
                 "tags": "Fiction, Philosophy",
                 "rating": "★★★★★",
                 "has_rating": True,
-                "description": "Between life and death there is a library, and within that library, the shelves go on forever. Every book provides a chance to try another life you could have lived.",
+                "description": "Between life and death there is a library, and within that library, the shelves go on forever.",
                 "page_count": 288
-            },
-            {
-                "index": 2,
-                "title": "Atomic Habits",
-                "author": "James Clear",
-                "tags": "Self-Help, Psychology",
-                "rating": "★★★★",
-                "has_rating": True,
-                "description": "Tiny changes, remarkable results. An easy and proven way to build good habits and break bad ones.",
-                "page_count": 320
             }
         ],
-        "last_week_books": [
-            {
-                "index": 3,
-                "title": "Dune",
-                "author": "Frank Herbert",
-                "tags": "Science Fiction, Classic",
-                "rating": "★★★★★",
-                "has_rating": True,
-                "description": "Set on the desert planet Arrakis, Dune is the story of the boy Paul Atreides, heir to a noble family tasked with ruling an inhospitable world.",
-                "page_count": 688
-            }
-        ],
-        "earlier_books": [
-            {
-                "index": 4,
-                "title": "The Seven Husbands of Evelyn Hugo",
-                "author": "Taylor Jenkins Reid",
-                "tags": "Romance, Historical Fiction",
-                "rating": "★★★★",
-                "has_rating": True,
-                "description": "Reclusive Hollywood icon Evelyn Hugo finally decides to tell her life story to an unknown journalist.",
-                "page_count": 400
-            }
-        ],
-        "this_week_count": 2,
-        "last_week_count": 1,
-        "earlier_count": 1,
+        "last_week_books": [],
+        "earlier_books": [],
+        "this_week_count": 1,
+        "last_week_count": 0,
+        "earlier_count": 0,
         "book_suggestion": {
             "index": 1,
             "title": "The Midnight Library",
@@ -234,7 +171,7 @@ def create_sample_data():
             "description": "Between life and death there is a library, and within that library, the shelves go on forever.",
             "page_count": 288
         },
-        "total_books_found": 4,
+        "total_books_found": 1,
         "current_time": datetime.now().strftime("%m/%d %H:%M")
     }
 
@@ -244,26 +181,21 @@ def home():
     """API information endpoint."""
     return jsonify({
         "name": "TRMNL Calibre Library Plugin",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "description": "Display your Calibre library on TRMNL e-ink devices",
         "endpoints": {
             "/calibre-status": "Main data endpoint for TRMNL",
             "/health": "Service health check",
-            "/debug": "Connection diagnostics"
+            "/debug": "Connection diagnostics",
+            "/test-db": "Simple database test"
         },
-        "repository": "https://github.com/your-username/trmnl-calibre-template",
-        "documentation": "See README.md for setup instructions"
+        "repository": "https://github.com/goodlibbin/trmnl-calibre-template"
     })
 
 
 @app.route('/health')
 def health():
-    """
-    Health check endpoint for monitoring service status.
-    
-    Returns:
-        JSON with service status and database connectivity
-    """
+    """Health check endpoint."""
     db_accessible = os.path.exists(get_calibre_db_path())
     
     return jsonify({
@@ -275,14 +207,48 @@ def health():
     })
 
 
+@app.route('/test-db')
+def test_db():
+    """Simple database test endpoint."""
+    db_path = get_calibre_db_path()
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Simple count query
+        cursor.execute("SELECT COUNT(*) FROM books")
+        total_count = cursor.fetchone()[0]
+        
+        # Get first few books with basic info
+        cursor.execute("SELECT id, title, timestamp, author_sort FROM books ORDER BY timestamp DESC LIMIT 5")
+        sample_books = cursor.fetchall()
+        
+        conn.close()
+        
+        return jsonify({
+            "database_path": db_path,
+            "total_books": total_count,
+            "sample_books": [
+                {
+                    "id": b[0], 
+                    "title": b[1], 
+                    "timestamp": b[2],
+                    "author": b[3]
+                } for b in sample_books
+            ]
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e), 
+            "database_path": db_path
+        })
+
+
 @app.route('/debug')
 def debug():
-    """
-    Diagnostic endpoint for troubleshooting setup issues.
-    
-    Provides detailed information about database connectivity,
-    sample data, and configuration for user debugging.
-    """
+    """Diagnostic endpoint for troubleshooting."""
     db_path = get_calibre_db_path()
     db_exists = os.path.exists(db_path)
     
@@ -297,26 +263,22 @@ def debug():
     
     if db_exists:
         try:
-            books = get_books_from_calibre(5)  # Get first 5 books
+            books = get_books_from_calibre(3)  # Get first 3 books
             debug_info["total_books"] = len(books)
             
             if books:
-                # Process first book for detailed info
                 book = books[0]
-                book_id, title, authors, timestamp_str, rating, description, page_count_str = book
-                
-                tags = get_book_tags(book_id)
-                debug_info["tags_working"] = bool(tags)
-                debug_info["page_counts_available"] = bool(page_count_str)
+                debug_info["tags_working"] = bool(book.get('tags'))
+                debug_info["page_counts_available"] = bool(book.get('page_count'))
                 
                 debug_info["sample_books"] = [{
-                    "title": title,
-                    "author": authors,
-                    "tags": tags,
-                    "has_rating": bool(rating),
-                    "has_description": bool(description),
-                    "has_page_count": bool(page_count_str),
-                    "timestamp": timestamp_str
+                    "title": book['title'],
+                    "author": book['author'],
+                    "tags": book['tags'],
+                    "has_rating": bool(book['rating']),
+                    "has_description": bool(book['description']),
+                    "has_page_count": bool(book['page_count']),
+                    "timestamp": book['timestamp']
                 }]
                 
         except Exception as e:
@@ -327,41 +289,25 @@ def debug():
 
 @app.route('/calibre-status', methods=['GET', 'POST'])
 def calibre_status():
-    """
-    Main endpoint for TRMNL integration.
-    
-    Accepts configuration from TRMNL form fields and returns book data
-    in the format expected by TRMNL templates.
-    
-    Form Fields (from TRMNL):
-    - book_limit: Number of books to display per section
-    - show_descriptions: Whether to include book descriptions
-    - show_page_counts: Whether to include page count data
-    
-    Returns:
-        JSON with categorized book data for TRMNL display
-    """
+    """Main endpoint for TRMNL integration."""
     try:
         # Extract configuration from TRMNL form fields
         book_limit = 10
         show_descriptions = True
         show_page_counts = True
         
-        # Handle both POST (webhook) and GET (polling) requests
         if request.method == 'POST':
             data = request.get_json() or {}
-            # TRMNL sends form field values in the request
             book_limit = int(data.get('book_limit', 10))
             show_descriptions = data.get('show_descriptions', True)
             show_page_counts = data.get('show_page_counts', True)
         else:
-            # Query parameters for direct testing
             book_limit = int(request.args.get('book_limit', 10))
             show_descriptions = request.args.get('show_descriptions', 'true').lower() == 'true'
             show_page_counts = request.args.get('show_page_counts', 'true').lower() == 'true'
         
         # Validate book limit
-        book_limit = max(1, min(book_limit, 50))  # Between 1 and 50
+        book_limit = max(1, min(book_limit, 50))
         
         # Check cache first
         cache_key = f"books:{book_limit}:{show_descriptions}:{show_page_counts}"
@@ -374,10 +320,9 @@ def calibre_status():
         books = get_books_from_calibre(book_limit * 3)  # Get extra for date filtering
         
         if not books:
-            # Return sample data if no database found
             result = create_sample_data()
             result["empty_library"] = True
-            result["message"] = "No Calibre library found. Check your database path and permissions."
+            result["message"] = "No books found in Calibre library. Check your database path and permissions."
             return jsonify(result)
         
         # Categorize books by addition date
@@ -390,43 +335,31 @@ def calibre_status():
         earlier_books = []
         
         for i, book in enumerate(books, 1):
-            book_id, title, authors, timestamp_str, rating, description, page_count_str = book
-            
             # Parse timestamp
             try:
-                timestamp = datetime.fromisoformat(timestamp_str.replace('T', ' ').split('+')[0])
+                if isinstance(book['timestamp'], str):
+                    timestamp = datetime.fromisoformat(book['timestamp'].replace('T', ' ').split('+')[0])
+                else:
+                    # Calibre stores timestamps as strings like "2024-06-27 18:30:45+00:00"
+                    timestamp = datetime.fromisoformat(str(book['timestamp']).replace('T', ' ').split('+')[0])
             except:
                 timestamp = datetime.now() - timedelta(days=30)  # Default to older
             
-            # Get tags for this book
-            tags = get_book_tags(book_id)
-            
-            # Process page count
-            page_count = None
-            if show_page_counts and page_count_str:
-                try:
-                    page_count = int(page_count_str)
-                except (ValueError, TypeError):
-                    pass
-            
             # Format rating as stars
-            stars = "★" * rating if rating else ""
+            stars = "★" * int(book['rating']) if book['rating'] else ""
             
-            # Clean description
-            clean_description = ""
-            if show_descriptions and description:
-                clean_description = re.sub(r'<[^>]+>', '', description).strip()
-                if len(clean_description) > 200:
-                    clean_description = clean_description[:197] + "..."
+            # Apply user preferences
+            description = book['description'] if show_descriptions else ""
+            page_count = book['page_count'] if show_page_counts else None
             
             book_data = {
                 "index": i,
-                "title": title or "Unknown Title",
-                "author": authors or "Unknown Author",
-                "tags": tags,
+                "title": book['title'],
+                "author": book['author'],
+                "tags": book['tags'],
                 "rating": stars,
-                "has_rating": bool(rating),
-                "description": clean_description,
+                "has_rating": bool(book['rating']),
+                "description": description,
                 "page_count": page_count
             }
             
@@ -487,8 +420,7 @@ def clear_cache():
 
 
 if __name__ == '__main__':
-    # Production configuration for Railway/Render deployment
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5001))
     debug_mode = os.environ.get('DEBUG', 'false').lower() == 'true'
     
     print(f"Starting TRMNL Calibre Library Plugin on port {port}")
