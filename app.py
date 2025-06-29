@@ -565,6 +565,7 @@ def sync_books():
             return jsonify({
                 "success": True,
                 "message": "Library sync completed",
+                "books_synced": len(sync_data['books']),  # This will show the actual count
                 "statistics": {
                     "total_books": len(sync_data['books']),
                     "books_with_pages": books_with_pages,
