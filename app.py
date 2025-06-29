@@ -1,8 +1,15 @@
 """
-TRMNL Calibre Library Plugin - Railway Cloud Component
+TRMNL Calibre Library Plugin - Cloud Service
 
-This runs on Railway and serves book data to TRMNL.
-Book metadata is synced from your local machine via the /sync endpoint.
+A cloud-hosted service that syncs with your local Calibre library
+and provides book data to TRMNL e-ink devices.
+
+Features:
+- Displays recently added books in a clean, linear format
+- Shows book ratings, authors, and tags
+- Includes a random book suggestion feature
+- Supports customizable display limits and formatting
+- Optimized for TRMNL's e-ink display framework
 """
 
 import os
@@ -16,17 +23,26 @@ app = Flask(__name__)
 # Configuration
 SYNC_TOKEN = os.environ.get('SYNC_TOKEN', 'your-secret-sync-token-here')
 BOOKS_FILE = 'books_data.json'
+DEFAULT_BOOK_LIMIT = int(os.environ.get('DEFAULT_BOOK_LIMIT', 10))
+MAX_BOOK_LIMIT = int(os.environ.get('MAX_BOOK_LIMIT', 50))
 
 def load_books_data():
-    """Load book data from JSON file."""
+    """
+    Load book data from persistent storage.
+    
+    Returns:
+        dict: Book data with metadata or empty structure if no data exists
+    """
     try:
         if os.path.exists(BOOKS_FILE):
             with open(BOOKS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                print(f"✅ Loaded {data.get('total_books', 0)} books from storage")
+                return data
     except Exception as e:
-        print(f"Error loading books data: {e}")
+        print(f"⚠️  Error loading books data: {e}")
     
-    # Return empty structure if no data
+    # Return empty structure if no data available
     return {
         "books": [],
         "last_updated": None,
@@ -34,210 +50,372 @@ def load_books_data():
     }
 
 def save_books_data(data):
-    """Save book data to JSON file."""
+    """
+    Save book data to persistent storage.
+    
+    Args:
+        data (dict): Book data to save
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         with open(BOOKS_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"✅ Saved {data.get('total_books', 0)} books to storage")
         return True
     except Exception as e:
-        print(f"Error saving books data: {e}")
+        print(f"❌ Error saving books data: {e}")
         return False
 
-def categorize_books(books, book_limit=10):
-    """Categorize books by date and format for TRMNL."""
-    now = datetime.now()
-    one_week_ago = now - timedelta(days=7)
-    two_weeks_ago = now - timedelta(days=14)
-
-    this_week_books = []
-    last_week_books = []
-    earlier_books = []
-
-    for book in books:
-        # Parse timestamp
-        try:
-            if isinstance(book['timestamp'], str):
-                timestamp_str = book['timestamp']
-                if '+' in timestamp_str:
-                    timestamp_str = timestamp_str.split('+')[0]
-                if 'T' in timestamp_str:
-                    timestamp_str = timestamp_str.replace('T', ' ')
-                timestamp = datetime.fromisoformat(timestamp_str)
-            else:
-                timestamp = datetime.fromisoformat(str(book['timestamp']).replace('T', ' ').split('+')[0])
-        except Exception as e:
-            print(f"⚠️  Error parsing timestamp for {book.get('title', 'Unknown')}: {e}")
-            timestamp = datetime.now() - timedelta(days=30)  # Default to older
-
-        # Format rating as stars
-        stars = "★" * int(book['rating']) if book['rating'] else ""
-
-        # Create book data for TRMNL
-        book_data = {
-            "index": len(this_week_books) + len(last_week_books) + len(earlier_books) + 1,
-            "title": book['title'],
-            "author": book['author'],
-            "tags": book['tags'],
-            "rating": stars,
-            "has_rating": bool(book['rating']),
-            "description": book['description'],
-            "page_count": book['page_count']
-        }
-
-        # Categorize by date
-        if timestamp >= one_week_ago:
-            if len(this_week_books) < book_limit:
-                this_week_books.append(book_data)
-        elif timestamp >= two_weeks_ago:
-            if len(last_week_books) < book_limit:
-                last_week_books.append(book_data)
+def parse_book_timestamp(timestamp_value):
+    """
+    Parse various timestamp formats into a datetime object.
+    
+    Args:
+        timestamp_value: Timestamp in various formats
+        
+    Returns:
+        datetime: Parsed timestamp or default if parsing fails
+    """
+    try:
+        if isinstance(timestamp_value, str):
+            timestamp_str = timestamp_value
+            # Remove timezone info if present
+            if '+' in timestamp_str:
+                timestamp_str = timestamp_str.split('+')[0]
+            # Handle T separator
+            if 'T' in timestamp_str:
+                timestamp_str = timestamp_str.replace('T', ' ')
+            return datetime.fromisoformat(timestamp_str)
         else:
-            if len(earlier_books) < book_limit:
-                earlier_books.append(book_data)
+            # Handle other formats
+            timestamp_str = str(timestamp_value).replace('T', ' ').split('+')[0]
+            return datetime.fromisoformat(timestamp_str)
+    except Exception as e:
+        print(f"⚠️  Timestamp parsing error: {e}")
+        # Return a date 30 days ago as fallback
+        return datetime.now() - timedelta(days=30)
 
-    return this_week_books, last_week_books, earlier_books
+def prepare_recent_books(books, book_limit=None):
+    """
+    Prepare a linear list of recently added books for TRMNL display.
+    
+    Args:
+        books (list): Raw book data from Calibre
+        book_limit (int): Maximum number of books to return
+        
+    Returns:
+        list: Formatted book data optimized for TRMNL display
+    """
+    if book_limit is None:
+        book_limit = DEFAULT_BOOK_LIMIT
+    
+    book_limit = max(1, min(book_limit, MAX_BOOK_LIMIT))
+    recent_books = []
+    now = datetime.now()
+    
+    print(f"📚 Preparing {min(len(books), book_limit)} books for display")
+    
+    for i, book in enumerate(books[:book_limit]):
+        # Parse timestamp for sorting and display
+        timestamp = parse_book_timestamp(book.get('timestamp'))
+        days_ago = (now - timestamp).days
+        
+        # Format date for display (MM/DD format)
+        date_added = timestamp.strftime("%m/%d")
+        
+        # Format rating as stars or empty string
+        rating_value = book.get('rating', 0)
+        stars = "★" * int(rating_value) if rating_value else ""
+        
+        # Clean and format tags
+        tags = book.get('tags', '').strip()
+        if len(tags) > 30:  # Truncate long tag lists for e-ink display
+            tags = tags[:27] + "..."
+        
+        # Create optimized book data for TRMNL
+        book_data = {
+            "index": i + 1,
+            "title": book.get('title', 'Unknown Title').strip(),
+            "author": book.get('author', 'Unknown Author').strip(),
+            "tags": tags,
+            "rating": stars,
+            "has_rating": bool(rating_value),
+            "description": book.get('description', '').strip(),
+            "page_count": book.get('page_count'),
+            "date_added": date_added,
+            "days_ago": days_ago,
+            "timestamp": timestamp.isoformat()
+        }
+        
+        recent_books.append(book_data)
+    
+    print(f"✅ Formatted {len(recent_books)} books for TRMNL display")
+    return recent_books
 
 @app.route('/')
 def home():
-    """API information."""
+    """
+    API information and status endpoint.
+    
+    Returns:
+        JSON response with service information and current status
+    """
     books_data = load_books_data()
     
     return jsonify({
-        "name": "TRMNL Calibre Library Plugin - Railway Cloud",
-        "version": "3.0.0",
-        "description": "Cloud-hosted Calibre library API for TRMNL e-ink devices",
-        "status": "✅ Cloud service ready",
-        "total_books": books_data.get("total_books", 0),
-        "last_updated": books_data.get("last_updated"),
-        "endpoints": {
-            "/calibre-status": "Main data endpoint for TRMNL",
-            "/sync": "Book data sync endpoint (POST with token)",
-            "/health": "Service health check"
+        "name": "TRMNL Calibre Library Plugin",
+        "version": "4.0.0",
+        "description": "Cloud-hosted Calibre library service for TRMNL e-ink devices",
+        "status": "✅ Service operational",
+        "library_stats": {
+            "total_books": books_data.get("total_books", 0),
+            "last_updated": books_data.get("last_updated"),
+            "data_source": "Cloud sync service"
         },
-        "data_source": "Railway Cloud + Local Sync"
+        "endpoints": {
+            "/calibre-status": "Main data endpoint for TRMNL devices",
+            "/sync": "Book data synchronization endpoint",
+            "/health": "Service health monitoring",
+            "/config": "Display configuration options"
+        },
+        "configuration": {
+            "default_book_limit": DEFAULT_BOOK_LIMIT,
+            "max_book_limit": MAX_BOOK_LIMIT
+        }
     })
 
 @app.route('/health')
 def health():
-    """Health check endpoint."""
+    """
+    Health check endpoint for monitoring service status.
+    
+    Returns:
+        JSON response with health status and metrics
+    """
     books_data = load_books_data()
     
-    return jsonify({
+    health_status = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "total_books": books_data.get("total_books", 0),
-        "last_updated": books_data.get("last_updated"),
-        "service": "Railway Cloud"
+        "uptime": "operational",
+        "library_status": {
+            "total_books": books_data.get("total_books", 0),
+            "last_sync": books_data.get("last_updated", "Never"),
+            "data_available": len(books_data.get("books", [])) > 0
+        },
+        "service_info": {
+            "version": "4.0.0",
+            "environment": "cloud",
+            "storage": "persistent"
+        }
+    }
+    
+    print(f"💚 Health check: {health_status['library_status']['total_books']} books available")
+    return jsonify(health_status)
+
+@app.route('/config')
+def get_config():
+    """
+    Return available configuration options for display customization.
+    
+    Returns:
+        JSON response with configuration options
+    """
+    return jsonify({
+        "display_options": {
+            "book_limit": {
+                "default": DEFAULT_BOOK_LIMIT,
+                "min": 1,
+                "max": MAX_BOOK_LIMIT,
+                "description": "Number of recent books to display"
+            },
+            "date_format": {
+                "options": ["MM/DD", "MM/DD/YYYY", "relative"],
+                "default": "MM/DD",
+                "description": "How to display book addition dates"
+            }
+        },
+        "available_fields": [
+            "title", "author", "tags", "rating", "description", 
+            "page_count", "date_added", "days_ago"
+        ],
+        "features": {
+            "random_suggestion": True,
+            "rating_display": True,
+            "tag_truncation": True,
+            "overflow_handling": True
+        }
     })
 
 @app.route('/sync', methods=['POST'])
 def sync_books():
-    """Endpoint for local script to sync book data."""
-    # Verify sync token
+    """
+    Endpoint for synchronizing book data from local Calibre installations.
+    Requires authentication via Bearer token.
+    
+    Returns:
+        JSON response confirming sync status
+    """
+    # Verify authentication token
     auth_header = request.headers.get('Authorization')
     if not auth_header or auth_header != f"Bearer {SYNC_TOKEN}":
-        return jsonify({"error": "Unauthorized"}), 401
+        print("🔒 Unauthorized sync attempt blocked")
+        return jsonify({"error": "Authentication required"}), 401
 
     try:
-        # Get book data from request
+        # Parse incoming book data
         sync_data = request.get_json()
         if not sync_data or 'books' not in sync_data:
-            return jsonify({"error": "Invalid data format"}), 400
+            print("❌ Invalid sync data format received")
+            return jsonify({"error": "Invalid data format - 'books' array required"}), 400
 
-        # Add metadata
+        # Prepare data for storage
+        timestamp = datetime.now().isoformat()
         books_data = {
             "books": sync_data['books'],
-            "last_updated": datetime.now().isoformat(),
+            "last_updated": timestamp,
             "total_books": len(sync_data['books']),
-            "sync_source": sync_data.get('source', 'local')
+            "sync_source": sync_data.get('source', 'local_calibre'),
+            "sync_version": "4.0.0"
         }
 
-        # Save to file
+        # Save to persistent storage
         if save_books_data(books_data):
-            print(f"✅ Synced {len(sync_data['books'])} books at {books_data['last_updated']}")
+            print(f"📚 Successfully synced {len(sync_data['books'])} books at {timestamp}")
             return jsonify({
-                "message": "Books synced successfully",
-                "books_count": len(sync_data['books']),
-                "timestamp": books_data['last_updated']
+                "message": "Library sync completed successfully",
+                "books_synced": len(sync_data['books']),
+                "timestamp": timestamp,
+                "status": "success"
             })
         else:
-            return jsonify({"error": "Failed to save book data"}), 500
+            print("❌ Failed to save synced book data")
+            return jsonify({"error": "Storage error during sync"}), 500
 
     except Exception as e:
-        print(f"❌ Sync error: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Sync operation failed: {e}")
+        return jsonify({"error": f"Sync failed: {str(e)}"}), 500
 
 @app.route('/calibre-status', methods=['GET', 'POST'])
 def calibre_status():
-    """Main endpoint for TRMNL integration."""
+    """
+    Main endpoint for TRMNL device integration.
+    Returns formatted book data optimized for e-ink display.
+    
+    Supports both GET and POST requests with optional configuration parameters.
+    
+    Returns:
+        JSON response with book data formatted for TRMNL templates
+    """
     try:
-        # Load book data
+        # Load current book data
         books_data = load_books_data()
         books = books_data.get('books', [])
+        current_date = datetime.now().strftime("%m/%d")
 
+        print(f"📊 TRMNL request: {len(books)} books available")
+
+        # Handle empty library state
         if not books:
+            print("📭 No books available - returning empty library state")
             return jsonify({
                 "empty_library": True,
                 "server_connected": True,
-                "message": "No book data available. Sync from your local Calibre library.",
-                "this_week_books": [],
-                "last_week_books": [],
-                "earlier_books": [],
-                "this_week_count": 0,
-                "last_week_count": 0,
-                "earlier_count": 0,
+                "message": "Your Calibre library is ready for books! Sync from your local library to get started.",
+                "recent_books": [],
                 "book_suggestion": None,
-                "total_books_found": 0,
-                "current_time": datetime.now().strftime("%m/%d %H:%M"),
-                "last_sync": books_data.get('last_updated', 'Never'),
-                "data_source": "Railway Cloud"
+                "library_stats": {
+                    "total_books_found": 0,
+                    "last_sync": books_data.get('last_updated', 'Never'),
+                    "data_source": "Cloud service"
+                },
+                "display_info": {
+                    "current_date": current_date,
+                    "recent_books_count": 0
+                }
             })
 
-        # Extract configuration
-        book_limit = 10
+        # Extract display configuration from request
+        book_limit = DEFAULT_BOOK_LIMIT
         if request.method == 'POST':
-            data = request.get_json() or {}
-            book_limit = int(data.get('book_limit', 10))
+            request_data = request.get_json() or {}
+            book_limit = int(request_data.get('book_limit', DEFAULT_BOOK_LIMIT))
         else:
-            book_limit = int(request.args.get('book_limit', 10))
+            book_limit = int(request.args.get('book_limit', DEFAULT_BOOK_LIMIT))
 
-        book_limit = max(1, min(book_limit, 50))
+        # Validate and constrain book limit
+        book_limit = max(1, min(book_limit, MAX_BOOK_LIMIT))
 
-        # Categorize books
-        this_week_books, last_week_books, earlier_books = categorize_books(books, book_limit)
+        # Prepare books for display
+        recent_books = prepare_recent_books(books, book_limit)
 
-        # Random book suggestion
-        all_books = this_week_books + last_week_books + earlier_books
-        book_suggestion = random.choice(all_books) if all_books else None
+        # Select random book for suggestion feature
+        book_suggestion = random.choice(recent_books) if recent_books else None
+        if book_suggestion:
+            print(f"🎲 Random suggestion: '{book_suggestion['title']}' by {book_suggestion['author']}")
 
-        result = {
+        # Prepare response data
+        response_data = {
             "empty_library": False,
             "server_connected": True,
-            "this_week_books": this_week_books,
-            "last_week_books": last_week_books,
-            "earlier_books": earlier_books,
-            "this_week_count": len(this_week_books),
-            "last_week_count": len(last_week_books),
-            "earlier_count": len(earlier_books),
+            "recent_books": recent_books,
             "book_suggestion": book_suggestion,
-            "total_books_found": len(books),
-            "current_time": datetime.now().strftime("%m/%d %H:%M"),
-            "last_sync": books_data.get('last_updated'),
-            "data_source": "Railway Cloud"
+            "library_stats": {
+                "total_books_found": len(books),
+                "last_sync": books_data.get('last_updated'),
+                "data_source": "Cloud service",
+                "sync_version": books_data.get('sync_version', 'legacy')
+            },
+            "display_info": {
+                "current_date": current_date,
+                "recent_books_count": len(recent_books),
+                "book_limit_used": book_limit
+            }
         }
 
-        return jsonify(result)
+        print(f"✅ Returning {len(recent_books)} books to TRMNL device")
+        return jsonify(response_data)
 
     except Exception as e:
-        print(f"❌ Error in calibre_status: {str(e)}")
+        print(f"❌ Error processing TRMNL request: {str(e)}")
         return jsonify({
             "error": f"Service error: {str(e)}",
             "empty_library": True,
             "server_connected": True,
-            "message": "Service error occurred. Check logs.",
-            "current_time": datetime.now().strftime("%m/%d %H:%M")
+            "message": "A service error occurred. Please check the logs or try again later.",
+            "display_info": {
+                "current_date": datetime.now().strftime("%m/%d")
+            }
         }), 500
 
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors with helpful information."""
+    return jsonify({
+        "error": "Endpoint not found",
+        "message": "Available endpoints: /, /health, /calibre-status, /sync, /config",
+        "status": 404
+    }), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors gracefully."""
+    print(f"💥 Internal server error: {error}")
+    return jsonify({
+        "error": "Internal server error",
+        "message": "A server error occurred. Please try again later.",
+        "status": 500
+    }), 500
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    # Development server configuration
+    port = int(os.environ.get('PORT', 5052))
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    
+    print(f"🚀 Starting TRMNL Calibre Library Plugin on port {port}")
+    print(f"📚 Default book limit: {DEFAULT_BOOK_LIMIT}")
+    print(f"🔧 Debug mode: {debug_mode}")
+    
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
