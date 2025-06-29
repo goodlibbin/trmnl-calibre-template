@@ -432,7 +432,7 @@ def home():
     
     return jsonify({
         "name": "TRMNL Calibre Library Plugin",
-        "version": "6.0.0",
+        "version": "7.0.0",
         "description": "Comprehensive Calibre library service for TRMNL displays",
         "status": "✅ Service operational",
         "configuration": {
@@ -448,10 +448,11 @@ def home():
             "data_source": books_data.get("source", "none")
         },
         "endpoints": {
-            "/trmnl-data": "Main display endpoint (single latest book)",
-            "/trmnl-list-data": "List display endpoint (books by time period)",
-            "/trmnl-simple-list": "Simple chronological list with total count",
-            "/books/recent": "List of recent books with full metadata",
+            "/trmnl-recent": "Simple chronological list (recommended)",
+            "/trmnl-simple-list": "Chronological list with date display",
+            "/trmnl-list-data": "List display (books by time period)",
+            "/trmnl-data": "Single latest book display",
+            "/books/recent": "Raw JSON list of recent books",
             "/books/random": "Random book suggestion",
             "/sync": "Sync endpoint for local library",
             "/health": "Service health check",
@@ -552,7 +553,7 @@ def sync_books():
             "last_updated": timestamp,
             "total_books": len(sync_data['books']),
             "source": sync_data.get('source', 'local_sync'),
-            "sync_version": "6.0.0"
+            "sync_version": "7.0.0"
         }
 
         if save_books_data(books_data):
@@ -565,7 +566,7 @@ def sync_books():
             return jsonify({
                 "success": True,
                 "message": "Library sync completed",
-                "books_synced": len(sync_data['books']),  # This will show the actual count
+                "books_synced": len(sync_data['books']),
                 "statistics": {
                     "total_books": len(sync_data['books']),
                     "books_with_pages": books_with_pages,
@@ -579,6 +580,90 @@ def sync_books():
     except Exception as e:
         print(f"❌ Sync error: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/trmnl-recent', methods=['GET', 'POST'])
+def trmnl_recent():
+    """
+    Dead simple endpoint - just recent books in chronological order.
+    Returns a flat list of books with all metadata.
+    """
+    try:
+        # Load book data
+        books_data = load_books_data()
+        books = books_data.get('books', [])
+        
+        # Try OPDS if no data and configured
+        if not books and CALIBRE_BASE_URL and not USE_MOCK_DATA:
+            print("📡 Attempting OPDS fetch...")
+            opds_books = fetch_opds_books()
+            if opds_books:
+                books = opds_books
+                books_data['source'] = 'opds_direct'
+        
+        current_time = datetime.now().strftime("%m/%d %H:%M")
+        
+        if not books:
+            # Empty library
+            return jsonify({
+                "books": [],
+                "book_suggestion": None,
+                "total_books": 0,
+                "current_time": current_time
+            })
+        
+        # Get limit (default 20)
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            limit = int(data.get('limit', 20))
+        else:
+            limit = int(request.args.get('limit', 20))
+        
+        limit = max(1, min(limit, 50))
+        
+        # Simple list of recent books
+        recent_books = []
+        for i, book in enumerate(books[:limit]):
+            recent_books.append({
+                "title": book.get('title', 'Unknown')[:60],
+                "author": book.get('author', 'Unknown'),
+                "tags": book.get('tags', '')[:40] if book.get('tags') else '',
+                "rating": "★" * int(book.get('rating', 0)) if book.get('rating', 0) > 0 else "",
+                "page_count": book.get('page_count'),
+                "has_page_count": book.get('page_count') is not None,
+                "has_rating": book.get('rating', 0) > 0
+            })
+        
+        # Book Roulette - pick from older books
+        book_suggestion = None
+        if len(books) > 10:
+            random_book = random.choice(books[10:])  # Skip the 10 most recent
+            book_suggestion = {
+                "title": random_book.get('title', 'Unknown'),
+                "author": random_book.get('author', 'Unknown'),
+                "tags": random_book.get('tags', '')[:40] if random_book.get('tags') else '',
+                "rating": "★" * int(random_book.get('rating', 0)) if random_book.get('rating', 0) > 0 else "",
+                "page_count": random_book.get('page_count'),
+                "description": random_book.get('description', '')[:200] if random_book.get('description') else '',
+                "has_page_count": random_book.get('page_count') is not None,
+                "has_rating": random_book.get('rating', 0) > 0
+            }
+        
+        return jsonify({
+            "books": recent_books,
+            "book_suggestion": book_suggestion,
+            "total_books": books_data.get('total_books', len(books)),
+            "current_time": current_time
+        })
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return jsonify({
+            "books": [],
+            "book_suggestion": None,
+            "total_books": 0,
+            "current_time": datetime.now().strftime("%m/%d %H:%M"),
+            "error": str(e)
+        }), 500
 
 @app.route('/trmnl-data', methods=['GET', 'POST'])
 @app.route('/calibre-status', methods=['GET', 'POST'])  # Legacy support
@@ -843,6 +928,149 @@ def trmnl_list_data():
             "message": "Service error - please check logs",
             "current_time": datetime.now().strftime("%m/%d %H:%M"),
             "server_connected": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/trmnl-simple-list', methods=['GET', 'POST'])
+def trmnl_simple_list():
+    """
+    Simple chronological list of recent books with total count and book roulette.
+    Perfect for a clean, linear display of your library.
+    """
+    try:
+        # Load book data
+        books_data = load_books_data()
+        books = books_data.get('books', [])
+        
+        # Try OPDS if no data and configured
+        if not books and CALIBRE_BASE_URL and not USE_MOCK_DATA:
+            print("📡 Attempting OPDS fetch...")
+            opds_books = fetch_opds_books()
+            if opds_books:
+                books = opds_books
+                books_data['source'] = 'opds_direct'
+        
+        current_time = datetime.now().strftime("%m/%d %H:%M")
+        
+        if not books:
+            # Empty library state
+            return jsonify({
+                "empty_library": True,
+                "message": "Sync your Calibre library to get started",
+                "current_time": current_time,
+                "total_books": 0,
+                "server_connected": True
+            })
+        
+        # Get limit from request (default 20, max 50)
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            limit = int(data.get('limit', 20))
+        else:
+            limit = int(request.args.get('limit', 20))
+        
+        limit = max(1, min(limit, MAX_BOOK_LIMIT))
+        
+        # Format recent books in chronological order
+        recent_books = []
+        now = datetime.now()
+        
+        for i, book in enumerate(books[:limit]):
+            timestamp = parse_book_timestamp(book.get('timestamp'))
+            days_ago = (now - timestamp).days
+            
+            # Format date display
+            if days_ago == 0:
+                date_display = "Today"
+            elif days_ago == 1:
+                date_display = "Yesterday"
+            elif days_ago < 7:
+                date_display = f"{days_ago} days ago"
+            else:
+                date_display = timestamp.strftime("%b %d")
+            
+            formatted_book = {
+                "index": i + 1,
+                "title": book.get('title', 'Unknown')[:60],
+                "author": book.get('author', 'Unknown'),
+                "tags": book.get('tags', '')[:50] if book.get('tags') else '',
+                "rating": "★" * int(book.get('rating', 0)) if book.get('rating', 0) > 0 else "",
+                "has_rating": book.get('rating', 0) > 0,
+                "page_count": book.get('page_count'),
+                "date_display": date_display,
+                "days_ago": days_ago
+            }
+            
+            recent_books.append(formatted_book)
+        
+        # Get a random book for Book Roulette (exclude very recent additions)
+        book_suggestion = None
+        older_books = [b for b in books[5:] if b.get('title')]  # Skip the 5 most recent
+        if older_books:
+            random_book = random.choice(older_books)
+            book_suggestion = {
+                "title": random_book.get('title', 'Unknown'),
+                "author": random_book.get('author', 'Unknown'),
+                "tags": random_book.get('tags', '')[:40] if random_book.get('tags') else 'No tags',
+                "page_count": random_book.get('page_count'),
+                "description": random_book.get('description', '')[:150] if random_book.get('description') else '',
+                "rating": "★" * int(random_book.get('rating', 0)) if random_book.get('rating', 0) > 0 else ""
+            }
+        
+        # Calculate statistics
+        total_books = books_data.get('total_books', len(books))
+        rated_books = sum(1 for book in books if book.get('rating', 0) > 0)
+        
+        return jsonify({
+            "empty_library": False,
+            "recent_books": recent_books,
+            "recent_count": len(recent_books),
+            "book_suggestion": book_suggestion,
+            "total_books": total_books,  # This will show your full count (894)
+            "rated_books": rated_books,
+            "books_displayed": len(recent_books),
+            "current_time": current_time,
+            "last_updated": books_data.get('last_updated', 'Never'),
+            "data_source": books_data.get('source', 'unknown')
+        })
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return jsonify({
+            "empty_library": True,
+            "message": "Service error - please check logs",
+            "current_time": datetime.now().strftime("%m/%d %H:%M"),
+            "total_books": 0,
+            "server_connected": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/clear-cache', methods=['POST', 'GET'])
+def clear_cache():
+    """
+    Clear stored book data (does not affect mock data mode).
+    """
+    if USE_MOCK_DATA:
+        return jsonify({
+            "success": False,
+            "message": "Cannot clear cache in mock data mode"
+        })
+    
+    try:
+        if os.path.exists(BOOKS_FILE):
+            os.remove(BOOKS_FILE)
+            return jsonify({
+                "success": True,
+                "message": "Book data cleared"
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "message": "No data to clear"
+            })
+    except Exception as e:
+        return jsonify({
+            "success": False,
             "error": str(e)
         }), 500
 
