@@ -448,7 +448,9 @@ def home():
             "data_source": books_data.get("source", "none")
         },
         "endpoints": {
-            "/trmnl-data": "Main display endpoint (latest book)",
+            "/trmnl-data": "Main display endpoint (single latest book)",
+            "/trmnl-list-data": "List display endpoint (books by time period)",
+            "/trmnl-simple-list": "Simple chronological list with total count",
             "/books/recent": "List of recent books with full metadata",
             "/books/random": "Random book suggestion",
             "/sync": "Sync endpoint for local library",
@@ -733,32 +735,113 @@ def random_book():
     except Exception as e:
         return jsonify({"error": str(e), "book": None}), 500
 
-@app.route('/clear-cache', methods=['POST', 'GET'])
-def clear_cache():
+@app.route('/trmnl-list-data', methods=['GET', 'POST'])
+def trmnl_list_data():
     """
-    Clear stored book data (does not affect mock data mode).
+    Endpoint for TRMNL list display - returns multiple recent books organized by time periods.
+    Designed for the list-based template showing This Week / Last Week / Recent books.
     """
-    if USE_MOCK_DATA:
-        return jsonify({
-            "success": False,
-            "message": "Cannot clear cache in mock data mode"
-        })
-    
     try:
-        if os.path.exists(BOOKS_FILE):
-            os.remove(BOOKS_FILE)
+        # Load book data
+        books_data = load_books_data()
+        books = books_data.get('books', [])
+        
+        # Try OPDS if no data and configured
+        if not books and CALIBRE_BASE_URL and not USE_MOCK_DATA:
+            print("📡 Attempting OPDS fetch...")
+            opds_books = fetch_opds_books()
+            if opds_books:
+                books = opds_books
+                books_data['source'] = 'opds_direct'
+        
+        current_time = datetime.now().strftime("%m/%d %H:%M")
+        
+        if not books:
+            # Empty library state
             return jsonify({
-                "success": True,
-                "message": "Book data cleared"
+                "empty_library": True,
+                "message": "Sync your Calibre library to get started",
+                "current_time": current_time,
+                "server_connected": True
             })
-        else:
-            return jsonify({
-                "success": True,
-                "message": "No data to clear"
-            })
-    except Exception as e:
+        
+        # Organize books by time periods
+        now = datetime.now()
+        this_week_books = []
+        last_week_books = []
+        earlier_books = []
+        
+        # Process and categorize books
+        for i, book in enumerate(books):
+            timestamp = parse_book_timestamp(book.get('timestamp'))
+            days_ago = (now - timestamp).days
+            
+            # Format book for display
+            formatted_book = {
+                "index": i + 1,
+                "title": book.get('title', 'Unknown')[:50],
+                "author": book.get('author', 'Unknown'),
+                "tags": book.get('tags', '')[:40] if book.get('tags') else '',
+                "rating": "★" * int(book.get('rating', 0)) if book.get('rating', 0) > 0 else "",
+                "has_rating": book.get('rating', 0) > 0,
+                "days_ago": days_ago,
+                "page_count": book.get('page_count'),
+                "description": book.get('description', '')[:200] if book.get('description') else ''
+            }
+            
+            # Categorize by time
+            if days_ago <= 7:
+                this_week_books.append(formatted_book)
+            elif days_ago <= 14:
+                last_week_books.append(formatted_book)
+            else:
+                earlier_books.append(formatted_book)
+        
+        # Limit lists for display
+        this_week_books = this_week_books[:10]
+        last_week_books = last_week_books[:10]
+        earlier_books = earlier_books[:10]
+        
+        # Get a random book for Book Roulette
+        book_suggestion = None
+        if len(books) > 5:  # Only suggest if we have enough books
+            random_book = random.choice(books)
+            book_suggestion = {
+                "title": random_book.get('title', 'Unknown'),
+                "author": random_book.get('author', 'Unknown'),
+                "tags": random_book.get('tags', '')[:30] if random_book.get('tags') else 'No tags',
+                "page_count": random_book.get('page_count'),
+                "description": random_book.get('description', '')[:150] if random_book.get('description') else '',
+                "rating": "★" * int(random_book.get('rating', 0)) if random_book.get('rating', 0) > 0 else ""
+            }
+        
+        # Calculate statistics
+        total_books = len(books)
+        rated_books = sum(1 for book in books if book.get('rating', 0) > 0)
+        
         return jsonify({
-            "success": False,
+            "empty_library": False,
+            "this_week_books": this_week_books,
+            "this_week_count": len(this_week_books),
+            "last_week_books": last_week_books,
+            "last_week_count": len(last_week_books),
+            "earlier_books": earlier_books,
+            "earlier_count": len(earlier_books),
+            "book_suggestion": book_suggestion,
+            "total_books": total_books,
+            "rated_books": rated_books,
+            "current_time": current_time,
+            "server_connected": True,
+            "message": f"{total_books} books in your library"
+        })
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return jsonify({
+            "empty_library": True,
+            "message": "Service error - please check logs",
+            "current_time": datetime.now().strftime("%m/%d %H:%M"),
+            "server_connected": False,
             "error": str(e)
         }), 500
 
