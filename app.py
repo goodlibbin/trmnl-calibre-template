@@ -72,6 +72,58 @@ def fetch_opds_feed():
     Returns:
         list: Recent books data or empty list if error
     """
+    
+    # TEMPORARY: Return mock data for testing Railway deployment
+    # Remove this block once you have Calibre-web accessible
+    print("🧪 Using mock data for Railway testing")
+    return [
+        {
+            'title': 'The Midnight Library',
+            'author': 'Matt Haig',
+            'rating': 4,
+            'tags': 'Fiction, Philosophy',
+            'timestamp': '2024-06-25T10:30:00',
+            'description': 'A thought-provoking novel about infinite possibilities.',
+            'page_count': 288,
+            'series': '',
+            'language': 'en',
+            'publisher': 'Canongate',
+            'published_date': '2020-08-13',
+            'formats': ['EPUB', 'PDF'],
+            'file_size': 1024000
+        },
+        {
+            'title': 'Atomic Habits',
+            'author': 'James Clear',
+            'rating': 5,
+            'tags': 'Self-Help, Psychology',
+            'timestamp': '2024-06-20T14:15:00',
+            'description': 'An easy & proven way to build good habits & break bad ones.',
+            'page_count': 320,
+            'series': '',
+            'language': 'en',
+            'publisher': 'Avery',
+            'published_date': '2018-10-16',
+            'formats': ['EPUB', 'MOBI'],
+            'file_size': 2048000
+        },
+        {
+            'title': 'Project Hail Mary',
+            'author': 'Andy Weir',
+            'rating': 5,
+            'tags': 'Science Fiction, Space',
+            'timestamp': '2024-06-18T09:45:00',
+            'description': 'A lone astronaut must save humanity in this thrilling tale.',
+            'page_count': 496,
+            'series': '',
+            'language': 'en',
+            'publisher': 'Ballantine Books',
+            'published_date': '2021-05-04',
+            'formats': ['EPUB', 'PDF', 'MOBI'],
+            'file_size': 3072000
+        }
+    ]
+    
     try:
         # Strategy 1: Try direct endpoints for recent books
         direct_urls = [
