@@ -358,16 +358,26 @@ def parse_book_timestamp(timestamp_value):
                     timestamp_value = timestamp_value.split('+')[0]
                 elif 'Z' in timestamp_value:
                     timestamp_value = timestamp_value.replace('Z', '')
+                # Remove microseconds if present
+                if '.' in timestamp_value:
+                    timestamp_value = timestamp_value.split('.')[0]
                 return datetime.fromisoformat(timestamp_value)
             else:
-                # Handle space-separated format
-                return datetime.fromisoformat(timestamp_value)
+                # Handle space-separated format (Calibre format)
+                # Remove timezone if present
+                if '+' in timestamp_value:
+                    timestamp_value = timestamp_value.split('+')[0]
+                # Handle the Calibre timestamp format
+                if '.' in timestamp_value:
+                    timestamp_value = timestamp_value.split('.')[0]
+                return datetime.strptime(timestamp_value.strip(), "%Y-%m-%d %H:%M:%S")
         else:
             # Fallback for other formats
             return datetime.fromisoformat(str(timestamp_value))
     except Exception as e:
-        print(f"⚠️  Timestamp parsing error: {e}")
-        return datetime.now() - timedelta(days=30)
+        print(f"⚠️  Timestamp parsing error for '{timestamp_value}': {e}")
+        # Return current time instead of trying to subtract timedelta
+        return datetime.now()
 
 def format_book_for_display(book):
     """
