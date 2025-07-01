@@ -141,7 +141,7 @@ Verify `SYNC_TOKEN` matches in both the sync script and Railway/Render environme
 
 ### Books missing page counts
 
-Install the Count Pages plugin in Calibre for automatic page count detection.
+Install the [Count Pages](https://github.com/kiwidude68/calibre_plugins/wiki/Count-Pages) plugin in Calibre for automatic page count detection.
 
 ## How It Works
 
