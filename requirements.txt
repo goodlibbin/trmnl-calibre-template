@@ -1,2 +1,8 @@
+# Web framework
 Flask==3.0.0
+
+# HTTP requests
 requests==2.31.0
+
+# For sync script (optional)
+schedule==1.2.0
