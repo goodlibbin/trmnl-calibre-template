@@ -38,6 +38,8 @@ python sync_to_cloud.py
 
 Your books should now appear on your TRMNL device.
 
+![TRMNL Calibre Display MockUp](https://github.com/goodlibbin/trmnl-calibre-template/blob/main/calibrelive.jpeg)
+
 ## Next Steps
 
 For automatic syncing every 30 minutes:
