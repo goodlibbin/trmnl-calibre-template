@@ -2,6 +2,8 @@
 
 Display your Calibre library on TRMNL e-ink devices. Shows recently added books with ratings, tags, and page counts, plus a random book suggestion.
 
+![TRMNL Calibre Display MockUp](https://github.com/goodlibbin/trmnl-calibre-template/blob/main/side-clear-light-on-dark-calibre.png)
+
 ## Overview
 
 This plugin syncs your local Calibre library to a cloud service (Railway/Render), then displays it on your TRMNL device. Most Calibre users keep their libraries local and secured, so this plugin uses a sync approach rather than direct OPDS access.
