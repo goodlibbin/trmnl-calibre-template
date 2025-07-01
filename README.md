@@ -151,6 +151,8 @@ Install the [Count Pages](https://github.com/kiwidude68/calibre_plugins/wiki/Cou
 4. **TRMNL polls** your cloud service for updates
 5. **Displays** formatted data on your e-ink screen
 
+![TRMNL Calibre Display MockUp](https://github.com/goodlibbin/trmnl-calibre-template/blob/main/calibrelive.jpeg)
+
 ## API Endpoints
 
 Your deployed service provides:
