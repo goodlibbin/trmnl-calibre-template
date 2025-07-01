@@ -1,247 +1,168 @@
 # TRMNL Calibre Library Plugin
 
-Display your Calibre-web library status on TRMNL e-ink devices. Shows latest books, library stats, ratings, and tags with beautiful e-ink optimized design.
+Display your Calibre library on TRMNL e-ink devices. Shows recently added books with ratings, tags, and page counts, plus a random book suggestion.
 
-## Features
+## Overview
 
-- 📚 **Latest Book Display**: Shows your most recently added book
-- ⭐ **Rating Integration**: Displays book ratings from your library  
-- 🏷️ **Tag Support**: Shows book categories and genres
-- 📊 **Library Statistics**: Tracks total books and rating percentages
-- ⚡ **Optimized for TRMNL**: Clean JSON data API designed for TRMNL's template system
-- 🧠 **Intelligent Caching**: Reduces server load with 5-minute caching
-- 📱 **Multiple Layouts**: Works with Full, Half-Horizontal, Half-Vertical, and Quadrant layouts
+This plugin syncs your local Calibre library to a cloud service (Railway/Render), then displays it on your TRMNL device. Most Calibre users keep their libraries local and secured, so this plugin uses a sync approach rather than direct OPDS access.
 
-## Quick Setup
+**What you'll see on your TRMNL:**
+- Recently added books with metadata
+- Star ratings and page counts
+- Book tags/genres
+- Random book suggestion ("Book Roulette")
+- Total library statistics
 
-### 1. Deploy to Render/Railway
+## Requirements
 
-- Fork this repository
-- Connect to [Render](https://render.com) or [Railway](https://railway.app)
-- Create new Web Service from your fork
-- Use `python app.py` as the start command
+- [TRMNL device](https://usetrmnl.com) with Developer Edition
+- Local [Calibre](https://calibre-ebook.com) installation
+- Cloud hosting account (Railway, Render, or similar)
+- Python 3.x on your local machine
 
-### 2. Configure Your Calibre-web Server
+## Installation Guide
 
-- Open `app.py` in your deployed repository
-- Find the "USER CONFIGURATION" section at the top
-- Replace the placeholder values:
+### Step 1: Fork the Recipe on TRMNL
 
-```python
-# USER CONFIGURATION - UPDATE THESE VALUES WITH YOUR OWN
-# =======================================================
-# Your Calibre-web server URL
-CALIBRE_BASE_URL = "http://your-server:8083"
-# Your library ID (usually "Calibre_Library")
-LIBRARY_ID = "Calibre_Library" 
-# =======================================================
+1. Go to [TRMNL Recipes](https://usetrmnl.com/recipes)
+2. Find "Calibre Library Status" 
+3. Click **Fork** (not Install) to create an editable copy
+4. You'll be redirected to your Private Plugin settings
+
+### Step 2: Deploy the Cloud Service
+
+#### Option A: Railway (Recommended)
+
+1. Fork this repository to your GitHub account
+2. Sign up for [Railway](https://railway.app)
+3. Create a new project from your forked repo
+4. Set these environment variables in Railway:
+   ```
+   SYNC_TOKEN=choose-a-secure-token-here
+   USE_MOCK_DATA=false
+   PORT=5000
+   ```
+5. Deploy the service
+6. Copy your Railway URL (format: `https://your-app.up.railway.app`)
+
+#### Option B: Render
+
+1. Fork this repository
+2. Sign up for [Render](https://render.com)
+3. Create new Web Service from your fork
+4. Add the same environment variables as above
+5. Deploy with start command: `python app.py`
+
+### Step 3: Configure the Sync Script
+
+1. Download `sync_to_railway.py` from this repository
+2. Open it in a text editor
+3. Update these lines at the top:
+   ```python
+   RAILWAY_URL = "https://your-app.up.railway.app"  # Your Railway URL
+   SYNC_TOKEN = "choose-a-secure-token-here"        # Same as Railway env
+   CALIBRE_LIBRARY_PATH = os.path.expanduser("~/Calibre Library")
+   ```
+4. Save the file
+
+### Step 4: Run Initial Sync
+
+1. Install required Python packages:
+   ```bash
+   pip install requests schedule
+   ```
+
+2. Run the sync script:
+   ```bash
+   python sync_to_railway.py
+   ```
+
+3. Choose option 1 for a one-time sync to test
+4. Verify success message shows your books synced
+
+### Step 5: Configure TRMNL Plugin
+
+1. Return to your forked plugin on TRMNL
+2. In the configuration form, set:
+   - **Polling URL**: `https://your-app.up.railway.app/trmnl-recent`
+   - **Method**: GET
+   - **Headers**: (leave empty)
+3. Click "Force Refresh" to test
+4. If successful, save the plugin
+
+### Step 6: Set Up Automatic Sync
+
+Run the sync script in daemon mode:
+```bash
+python sync_to_railway.py
 ```
+Choose option 2 (every 30 minutes) or 3 (every hour)
 
-- Save and redeploy your app
+**For permanent sync**, use your system's service manager:
+- **Linux**: Create a systemd service
+- **macOS**: Use launchd
+- **Windows**: Use Task Scheduler
 
-### 3. Test Your Setup
+## Configuration
 
-- Visit your deployed URL: `https://your-app.render.com/trmnl-data`
-- You should see JSON data with your book information
-- If you see errors, check the `/debug` endpoint for troubleshooting
+### Environment Variables (Railway/Render)
 
-### 4. Configure TRMNL
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SYNC_TOKEN` | Yes | Authentication token (choose any secure string) |
+| `USE_MOCK_DATA` | No | Set to `false` for production |
+| `PORT` | No | Default: 5000 |
 
-#### Option A: Use as Private Plugin
-- Create a Private Plugin in TRMNL
-- Set strategy to "Polling"
-- Set polling URL to: `https://your-app.render.com/trmnl-data`
-- Copy your preferred template markup from examples below
-- Paste into markup editor and save
+### Sync Script Settings
 
-#### Option B: Install from TRMNL Store (if published)
-- Install the "Calibre Library Status" plugin from TRMNL
-- Enter your backend URL: `https://your-app.render.com`
-- Choose your layout preference
-- Save and enjoy!
-
-## Template Examples
-
-This backend provides clean JSON data that works with TRMNL's template system. Here are example templates for different layout sizes:
-
-### Full Layout Template
-
-```html
-<div class="layout">
-<div class="columns">
-<div class="column">
-<!-- Centered Title with Border -->
-<div class="richtext richtext--center mb--3">
-<div class="content content--large clamp--3 text--center p--2" data-pixel-perfect="true" style="font-weight: bold; border: 2px solid black;">{{ title }}</div>
-</div>
-
-<!-- Data Table -->
-<table class="table">
-<tbody>
-<tr>
-<td class="w--32"><span class="title title--medium">Author</span></td>
-<td><span class="label clamp--1">{{ author }}</span></td>
-</tr>
-<tr>
-<td><span class="title title--medium">Rating</span></td>
-<td><span class="label">{{ rating }}</span></td>
-</tr>
-<tr>
-<td><span class="title title--medium">Tags</span></td>
-<td><span class="label clamp--1">{{ tags }}</span></td>
-</tr>
-<tr>
-<td><span class="title title--medium">Library</span></td>
-<td>
-<span class="label">{{ total_books }} books</span>
-<div style="width: 100%; height: 8px; border: 1px solid black; background: white; position: relative; margin-top: 3px;">
-<div style="position: absolute; background: black; height: 100%; width: {{ rating_percentage }}%;"></div>
-</div>
-<span class="label" style="font-size: 0.8em;">{{ rated_books }} rated ({{ rating_percentage }}%)</span>
-</td>
-</tr>
-<tr>
-<td><span class="title title--medium">Status</span></td>
-<td><span class="label">{{ server_status }}</span></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-</div>
-
-<div class="title_bar">
-<img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
-<span class="title">Calibre Library</span>
-<span class="instance">{{ current_time }}</span>
-</div>
-```
-
-### Half Layout Template
-
-```html
-<div class="title_bar">
-<img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
-<span class="title">Calibre</span>
-<span class="instance">{{ current_time }}</span>
-</div>
-
-<div class="layout layout--col layout--top gap--small">
-<div class="w-full">
-<!-- Centered Title -->
-<div class="richtext richtext--center mb--2">
-<div class="content content--medium clamp--2 text--center p--1" data-pixel-perfect="true" style="font-weight: bold; border: 1px solid black;">{{ title }}</div>
-</div>
-
-<!-- Compact Data -->
-<table class="table">
-<tbody>
-<tr>
-<td class="w--32"><span class="title title--small">Author</span></td>
-<td><span class="label clamp--1">{{ author }}</span></td>
-</tr>
-<tr>
-<td><span class="title title--small">Rating</span></td>
-<td><span class="label">{{ rating }}</span></td>
-</tr>
-<tr>
-<td><span class="title title--small">Library</span></td>
-<td>
-<span class="label">{{ total_books }} books</span>
-<div style="width: 100%; height: 6px; border: 1px solid black; background: white; position: relative; margin-top: 2px;">
-<div style="position: absolute; background: black; height: 100%; width: {{ rating_percentage }}%;"></div>
-</div>
-</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-```
-
-## JSON Data Format
-
-The `/trmnl-data` endpoint returns data in this format:
-
-```json
-{
-  "title": "Feel-Good Productivity: How to Do More...",
-  "author": "Ali Abdaal",
-  "rating": "★★★★",
-  "tags": "Business, Psychology",
-  "total_books": 10,
-  "rated_books": 8,
-  "rating_percentage": 80,
-  "server_status": "Connected",
-  "last_update": "06/26 17:42",
-  "current_time": "06/26 17:42"
-}
-```
-
-## API Endpoints
-
-- `/trmnl-data` - Main JSON data endpoint for TRMNL templates
-- `/debug` - System diagnostics and data inspection  
-- `/health` - Health check and connection status
-- `/clear-cache` - Force fresh data fetch
-- `/api/recent` - Legacy endpoint (backwards compatibility)
+Edit these in `sync_to_railway.py`:
+- `RAILWAY_URL`: Your deployed service URL
+- `SYNC_TOKEN`: Must match Railway/Render setting
+- `CALIBRE_LIBRARY_PATH`: Path to your Calibre library
 
 ## Troubleshooting
 
-### Plugin Shows "Library Offline"
-- Ensure you've updated `CALIBRE_BASE_URL` in `app.py`
-- Verify your Calibre-web server is accessible from the internet
-- Check that your server URL format is correct (include http:// or https://)
-- Test the `/debug` endpoint to see connection details
+### No books showing on TRMNL
 
-### No Books Showing
-- Verify your Calibre library has books with recent additions
-- Check that your `LIBRARY_ID` matches your Calibre-web setup
-- Test the OPDS feed URL directly in your browser
-- Use `/debug` endpoint to see what data is being found
+1. Check sync script output for errors
+2. Visit `https://your-app.up.railway.app/health` to verify deployment
+3. Check `https://your-app.up.railway.app/debug` for configuration status
+4. Ensure sync completed successfully
 
-### Template Not Displaying Correctly
-- Verify your polling URL points to `/trmnl-data`
-- Check the JSON response format matches expected template variables
-- Test different layout templates to find what works best
-- Ensure your TRMNL device has internet connectivity
+### Sync script can't find Calibre database
 
-## Updating Your Deployment
+The script searches common locations. If not found, update `CALIBRE_LIBRARY_PATH` to your exact path.
 
-To update your deployment with the latest features:
+### "Authentication required" error
 
-- Check this repository for updates
-- Compare with your deployed version  
-- Update your `app.py` with new features (keep your personal configuration)
-- Redeploy your app
+Verify `SYNC_TOKEN` matches in both the sync script and Railway/Render environment variables.
+
+### Books missing page counts
+
+Install the Count Pages plugin in Calibre for automatic page count detection.
 
 ## How It Works
 
-- **OPDS Parsing**: Fetches your Calibre-web OPDS feed every 5 minutes
-- **Data Extraction**: Parses book metadata, ratings, and tags
-- **Smart Caching**: Caches data to reduce server load
-- **JSON API**: Provides clean data for TRMNL's template system
-- **Template Ready**: Optimized for e-ink display rendering
+1. **Local sync script** reads your Calibre database directly
+2. **Extracts metadata** including ratings, tags, page counts
+3. **Syncs to cloud** via authenticated POST request
+4. **TRMNL polls** your cloud service for updates
+5. **Displays** formatted data on your e-ink screen
 
-## Contributing
+## API Endpoints
 
-This is an open-source project! Feel free to:
+Your deployed service provides:
+- `/health` - Service health check
+- `/debug` - Configuration and sample data
+- `/trmnl-recent` - Book data for TRMNL (requires sync)
+- `/sync` - Receives data from sync script (authenticated)
 
-- Report issues
-- Suggest improvements  
-- Submit pull requests
-- Share your layout customizations
+## Support
+
+- TRMNL Help: [help.usetrmnl.com](https://help.usetrmnl.com)
+- Calibre Documentation: [manual.calibre-ebook.com](https://manual.calibre-ebook.com)
+- Issues: Use the GitHub issues tab
 
 ## License
 
-MIT License - feel free to modify for your own use!
-
-## Credits
-
-- Built for the [TRMNL](https://usetrmnl.com) e-ink display community
-- Inspired by beautiful, automated library tracking
-- Thanks to Calibre and Calibre-web for providing excellent library management
-
-Enjoy tracking your library! 📚✨
-
-For more TRMNL templates and projects, visit the [TRMNL community](https://usetrmnl.com).
+MIT License - See LICENSE file
